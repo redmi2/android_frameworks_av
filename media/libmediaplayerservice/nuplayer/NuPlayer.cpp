@@ -12,6 +12,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2014-2015 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  */
 
 //#define LOG_NDEBUG 0
@@ -57,6 +76,9 @@
 #include "ESDS.h"
 #include <media/stagefright/Utils.h>
 #include "mediaplayerservice/AVNuExtensions.h"
+#ifdef DOLBY_ENABLE
+#include "DolbyNuPlayerExtImpl.h"
+#endif // DOLBY_END
 
 namespace android {
 
@@ -206,6 +228,7 @@ NuPlayer::NuPlayer(pid_t pid)
       mPlaybackSettings(AUDIO_PLAYBACK_RATE_DEFAULT),
       mVideoFpsHint(-1.f),
       mStarted(false),
+      mResetting(false),
       mSourceStarted(false),
       mPaused(false),
       mPausedByClient(false),
@@ -1037,6 +1060,10 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                         break;                    // Finish anyways.
                 }
                 notifyListener(MEDIA_ERROR, MEDIA_ERROR_UNKNOWN, err);
+#ifdef DOLBY_ENABLE
+            } else if (what == kWhatDlbCpProc) {
+                onDolbyMessageReceived();
+#endif // DOLBY_END
             } else {
                 ALOGV("Unhandled decoder notification %d '%c%c%c%c'.",
                       what,
@@ -1093,6 +1120,12 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 int32_t audio;
                 CHECK(msg->findInt32("audio", &audio));
 
+                if (audio) {
+                    mAudioEOS = false;
+                } else {
+                    mVideoEOS = false;
+                }
+
                 ALOGV("renderer %s flush completed.", audio ? "audio" : "video");
                 if (audio && (mFlushingAudio == NONE || mFlushingAudio == FLUSHED
                         || mFlushingAudio == SHUT_DOWN)) {
@@ -1110,12 +1143,7 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
                 int32_t reason;
                 CHECK(msg->findInt32("reason", &reason));
                 ALOGV("Tear down audio with reason %d.", reason);
-
-                if (ifDecodedPCMOffload()) {
-                    tearDownPCMOffload(msg);
-                    break;
-                }
-
+                mAudioDecoder->pause();
                 mAudioDecoder.clear();
                 ++mAudioDecoderGeneration;
                 bool needsToCreateAudioDecoder = true;
@@ -1162,6 +1190,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
         case kWhatReset:
         {
             ALOGV("kWhatReset");
+
+            mResetting = true;
 
             mDeferredActions.push_back(
                     new FlushDecoderAction(
@@ -1248,7 +1278,8 @@ void NuPlayer::onMessageReceived(const sp<AMessage> &msg) {
 }
 
 void NuPlayer::onResume() {
-    if (!mPaused) {
+    if (!mPaused || mResetting) {
+        ALOGD_IF(mResetting, "resetting, onResume discarded");
         return;
     }
     mPaused = false;
@@ -1605,7 +1636,8 @@ status_t NuPlayer::instantiateDecoder(bool audio, sp<DecoderBase> *decoder) {
     (*decoder)->configure(format);
 
     // allocate buffers to decrypt widevine source buffers
-    if (!audio && (mSourceFlags & Source::FLAG_SECURE)) {
+    if (!audio && ((mSourceFlags & Source::FLAG_SECURE) ||
+                   (mSourceFlags & Source::FLAG_USE_SET_BUFFERS))) {
         Vector<sp<ABuffer> > inputBufs;
         CHECK_EQ((*decoder)->getInputBuffers(&inputBufs), (status_t)OK);
 
@@ -1968,6 +2000,7 @@ void NuPlayer::performReset() {
     }
 
     mStarted = false;
+    mResetting = false;
     mSourceStarted = false;
 }
 
@@ -2411,47 +2444,6 @@ void NuPlayer::Source::notifyInstantiateSecureDecoders(const sp<AMessage> &reply
 
 void NuPlayer::Source::onMessageReceived(const sp<AMessage> & /* msg */) {
     TRESPASS();
-}
-
-void NuPlayer::tearDownPCMOffload(const sp<AMessage> &msg) {
-    int32_t reason;
-    CHECK(msg->findInt32("reason", &reason));
-
-    if (mAudioDecoder != NULL) {
-        switch (mFlushingAudio) {
-        case NONE:
-        case FLUSHING_DECODER:
-            mDeferredActions.push_back(
-                new FlushDecoderAction(FLUSH_CMD_SHUTDOWN /* audio */,
-                                       FLUSH_CMD_NONE /* video */));
-
-            if (reason == Renderer::kDueToError) {
-                mDeferredActions.push_back(
-                    new InstantiateDecoderAction(true /* audio */, &mAudioDecoder));
-            }
-
-            int64_t positionUs;
-            if (!msg->findInt64("positionUs", &positionUs)) {
-                positionUs = mPreviousSeekTimeUs;
-            }
-            mDeferredActions.push_back(new SeekAction(positionUs));
-            break;
-        default:
-            ALOGW("tearDownPCMOffload while flushing audio in %d", mFlushingAudio);
-            break;
-        }
-    }
-
-    if (mRenderer != NULL) {
-        closeAudioSink();
-        mRenderer->flush(
-            true /* audio */, false /* notifyComplete */);
-        if (mVideoDecoder != NULL) {
-            mRenderer->flush(
-                false /* audio */, false /* notifyComplete */);
-        }
-    }
-    processDeferredActions();
 }
 
 }  // namespace android

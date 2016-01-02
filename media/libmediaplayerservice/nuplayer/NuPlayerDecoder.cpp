@@ -12,6 +12,25 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * This file was modified by Dolby Laboratories, Inc. The portions of the
+ * code that are surrounded by "DOLBY..." are copyrighted and
+ * licensed separately, as follows:
+ *
+ *  (C) 2014-2015 Dolby Laboratories, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  */
 
 //#define LOG_NDEBUG 0
@@ -40,7 +59,9 @@
 #include "avc_utils.h"
 #include "ATSParser.h"
 #include "mediaplayerservice/AVNuExtensions.h"
-
+#ifdef DOLBY_ENABLE
+#include "DolbyNuPlayerDecoderExtImpl.h"
+#endif // DOLBY_END
 
 namespace android {
 
@@ -72,7 +93,6 @@ NuPlayer::Decoder::Decoder(
       mIsSecure(false),
       mFormatChangePending(false),
       mTimeChangePending(false),
-      mPaused(true),
       mResumePending(false),
       mComponentName("decoder") {
     mCodecLooper = new ALooper;
@@ -320,6 +340,9 @@ void NuPlayer::Decoder::onConfigure(const sp<AMessage> &format) {
 
     sp<AMessage> reply = new AMessage(kWhatCodecNotify, this);
     mCodec->setCallback(reply);
+#ifdef DOLBY_ENABLE
+    setDolbyMessage();
+#endif // DOLBY_END
 
     err = mCodec->start();
     if (err != OK) {
@@ -613,6 +636,12 @@ bool NuPlayer::Decoder::handleAnOutputBuffer(
         }
 
         mSkipRenderingUntilMediaTimeUs = -1;
+    } else if ((flags & MediaCodec::BUFFER_FLAG_DATACORRUPT) &&
+            AVNuUtils::get()->dropCorruptFrame()) {
+        ALOGV("[%s] dropping corrupt buffer at time %lld as requested.",
+                     mComponentName.c_str(), (long long)timeUs);
+        reply->post();
+        return true;
     }
 
     mNumFramesTotal += !mIsAudio;
@@ -656,8 +685,11 @@ void NuPlayer::Decoder::handleOutputFormatChange(const sp<AMessage> &format) {
             flags = AUDIO_OUTPUT_FLAG_NONE;
         }
 
-        mRenderer->openAudioSink(
+        status_t err = mRenderer->openAudioSink(
                 format, false /* offloadOnly */, hasVideo, flags, NULL /* isOffloaed */, mSource->isStreaming());
+        if (err != OK) {
+            handleError(err);
+        }
     }
 }
 

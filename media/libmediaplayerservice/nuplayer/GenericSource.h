@@ -126,6 +126,7 @@ protected:
     bool mAudioIsVorbis;
     bool mIsWidevine;
     bool mIsSecure;
+    bool mUseSetBuffers;
     bool mIsStreaming;
     bool mUIDValid;
     uid_t mUID;
@@ -153,6 +154,7 @@ protected:
     int32_t mPrevBufferPercentage;
 
     mutable Mutex mReadBufferLock;
+    mutable Mutex mDisconnectLock;
 
     sp<ALooper> mLooper;
 
