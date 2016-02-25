@@ -36,7 +36,7 @@
 
 #include <private/gui/ComposerService.h>
 #if QTI_BSP
-#include <gralloc_priv.h>
+#include <../../../../hardware/qcom/display/libgralloc/gralloc_priv.h>
 #endif
 
 namespace android {
