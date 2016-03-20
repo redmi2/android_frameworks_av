@@ -1635,7 +1635,8 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
 
     if (mSegmentFirstPTS < 0ll) {
         // get the smallest first PTS from all streams present in this parser
-        for (size_t i = mPacketSources.size(); i-- > 0;) {
+        for (size_t i = mPacketSources.size(); i > 0;) {
+            i--;
             const LiveSession::StreamType stream = mPacketSources.keyAt(i);
             if (stream == LiveSession::STREAMTYPE_SUBTITLES) {
                 ALOGE("MPEG2 Transport streams do not contain subtitles.");
@@ -1690,7 +1691,8 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
     }
 
     status_t err = OK;
-    for (size_t i = mPacketSources.size(); i-- > 0;) {
+    for (size_t i = mPacketSources.size(); i > 0;) {
+        i--;
         sp<AnotherPacketSource> packetSource = mPacketSources.valueAt(i);
 
         const LiveSession::StreamType stream = mPacketSources.keyAt(i);
@@ -1815,7 +1817,8 @@ status_t PlaylistFetcher::extractAndQueueAccessUnitsFromTs(const sp<ABuffer> &bu
     }
 
     if (err != OK) {
-        for (size_t i = mPacketSources.size(); i-- > 0;) {
+        for (size_t i = mPacketSources.size(); i > 0;) {
+            i--;
             sp<AnotherPacketSource> packetSource = mPacketSources.valueAt(i);
             packetSource->clear();
         }
@@ -1910,6 +1913,9 @@ status_t PlaylistFetcher::extractAndQueueAccessUnits(
             while (!it.done()) {
                 size_t length;
                 const uint8_t *data = it.getData(&length);
+                if (!data) {
+                    return ERROR_MALFORMED;
+                }
 
                 static const char *kMatchName =
                     "com.apple.streaming.transportStreamTimestamp";

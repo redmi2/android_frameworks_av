@@ -194,12 +194,14 @@ status_t WAVExtractor::init() {
 
             mNumChannels = U16_LE_AT(&formatSpec[2]);
             if (mWaveFormat != WAVE_FORMAT_EXTENSIBLE) {
-                if (mNumChannels != 1 && mNumChannels != 2) {
+                if (mNumChannels == 0) {
+                    return ERROR_UNSUPPORTED;
+                } else if (mNumChannels != 1 && mNumChannels != 2) {
                     ALOGW("More than 2 channels (%d) in non-WAVE_EXT, unknown channel mask",
                             mNumChannels);
                 }
             } else {
-                if (mNumChannels < 1 && mNumChannels > 8) {
+                if (mNumChannels < 1 || mNumChannels > 8) {
                     return ERROR_UNSUPPORTED;
                 }
             }
@@ -311,9 +313,17 @@ status_t WAVExtractor::init() {
                         1000000LL * (mDataSize / 65 * 320) / 8000;
                 } else {
                     size_t bytesPerSample = mBitsPerSample >> 3;
+
+                    if (!bytesPerSample || !mNumChannels)
+                        return ERROR_MALFORMED;
+
+                    size_t num_samples = mDataSize / (mNumChannels * bytesPerSample);
+
+                    if (!mSampleRate)
+                        return ERROR_MALFORMED;
+
                     durationUs =
-                        1000000LL * (mDataSize / (mNumChannels * bytesPerSample))
-                            / mSampleRate;
+                        1000000LL * num_samples / mSampleRate;
                 }
 
                 mTrackMeta->setInt64(kKeyDuration, durationUs);

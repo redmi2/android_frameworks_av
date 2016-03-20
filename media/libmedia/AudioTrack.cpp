@@ -842,13 +842,13 @@ status_t AudioTrack::setPlaybackRate(const AudioPlaybackRate &playbackRate)
     }
 
     // Check resampler ratios are within bounds
-    if (effectiveRate > mSampleRate * AUDIO_RESAMPLER_DOWN_RATIO_MAX) {
+    if ((uint64_t)effectiveRate > (uint64_t)mSampleRate * (uint64_t)AUDIO_RESAMPLER_DOWN_RATIO_MAX) {
         ALOGV("setPlaybackRate(%f, %f) failed. Resample rate exceeds max accepted value",
                 playbackRate.mSpeed, playbackRate.mPitch);
         return BAD_VALUE;
     }
 
-    if (effectiveRate * AUDIO_RESAMPLER_UP_RATIO_MAX < mSampleRate) {
+    if ((uint64_t)effectiveRate * (uint64_t)AUDIO_RESAMPLER_UP_RATIO_MAX < (uint64_t)mSampleRate) {
         ALOGV("setPlaybackRate(%f, %f) failed. Resample rate below min accepted value",
                         playbackRate.mSpeed, playbackRate.mPitch);
         return BAD_VALUE;
@@ -2201,8 +2201,7 @@ uint32_t AudioTrack::updateAndGetPosition_l()
 {
     // This is the sole place to read server consumed frames
     uint32_t newServer = mProxy->getPosition();
-    int32_t delta = newServer - mServer;
-    mServer = newServer;
+    uint32_t delta = newServer > mServer ? newServer - mServer : 0;
     // TODO There is controversy about whether there can be "negative jitter" in server position.
     //      This should be investigated further, and if possible, it should be addressed.
     //      A more definite failure mode is infrequent polling by client.
@@ -2211,11 +2210,12 @@ uint32_t AudioTrack::updateAndGetPosition_l()
     //      That should ensure delta never goes negative for infrequent polling
     //      unless the server has more than 2^31 frames in its buffer,
     //      in which case the use of uint32_t for these counters has bigger issues.
-    if (delta < 0) {
-        ALOGE("detected illegal retrograde motion by the server: mServer advanced by %d", delta);
-        delta = 0;
+    if (newServer < mServer) {
+        ALOGE("detected illegal retrograde motion by the server: mServer advanced by %d",
+              (int32_t) newServer - mServer);
     }
-    return mPosition += (uint32_t) delta;
+    mServer = newServer;
+    return mPosition += delta;
 }
 
 bool AudioTrack::isSampleRateSpeedAllowed_l(uint32_t sampleRate, float speed) const
@@ -2368,9 +2368,9 @@ status_t AudioTrack::getTimestamp(AudioTimestamp& timestamp)
         // Convert timestamp position from server time base to client time base.
         // TODO The following code should work OK now because timestamp.mPosition is 32-bit.
         // But if we change it to 64-bit then this could fail.
-        // If (mPosition - mServer) can be negative then should use:
-        //   (int32_t)(mPosition - mServer)
-        timestamp.mPosition += mPosition - mServer;
+        // Split this out instead of using += to prevent unsigned overflow
+        // checks in the outer sum.
+        timestamp.mPosition = timestamp.mPosition + static_cast<int32_t>(mPosition) - mServer;
         // Immediately after a call to getPosition_l(), mPosition and
         // mServer both represent the same frame position.  mPosition is
         // in client's point of view, and mServer is in server's point of

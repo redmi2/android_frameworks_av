@@ -1392,7 +1392,8 @@ ACodec::BufferInfo *ACodec::dequeueBufferFromNativeWindow() {
         }
 
         bool stale = false;
-        for (size_t i = mBuffers[kPortIndexOutput].size(); i-- > 0;) {
+        for (size_t i = mBuffers[kPortIndexOutput].size(); i > 0;) {
+            i--;
             BufferInfo *info = &mBuffers[kPortIndexOutput].editItemAt(i);
 
             if (info->mGraphicBuffer != NULL &&
@@ -1435,7 +1436,8 @@ ACodec::BufferInfo *ACodec::dequeueBufferFromNativeWindow() {
 
     // get oldest undequeued buffer
     BufferInfo *oldest = NULL;
-    for (size_t i = mBuffers[kPortIndexOutput].size(); i-- > 0;) {
+    for (size_t i = mBuffers[kPortIndexOutput].size(); i > 0;) {
+        i--;
         BufferInfo *info =
             &mBuffers[kPortIndexOutput].editItemAt(i);
         if (info->mStatus == BufferInfo::OWNED_BY_NATIVE_WINDOW &&
@@ -4564,16 +4566,13 @@ void ACodec::sendFormatChange(const sp<AMessage> &reply) {
                (mEncoderDelay || mEncoderPadding)) {
         int32_t channelCount;
         CHECK(notify->findInt32("channel-count", &channelCount));
-        size_t frameSize = channelCount * sizeof(int16_t);
         if (mSkipCutBuffer != NULL) {
             size_t prevbufsize = mSkipCutBuffer->size();
             if (prevbufsize != 0) {
                 ALOGW("Replacing SkipCutBuffer holding %zu bytes", prevbufsize);
             }
         }
-        mSkipCutBuffer = new SkipCutBuffer(
-                mEncoderDelay * frameSize,
-                mEncoderPadding * frameSize);
+        mSkipCutBuffer = new SkipCutBuffer(mEncoderDelay, mEncoderPadding, channelCount);
     }
 
     getVQZIPInfo(notify);

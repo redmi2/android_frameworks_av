@@ -179,6 +179,9 @@ struct MyVorbisExtractor : public MyOggExtractor {
 
 protected:
     virtual int64_t getTimeUsOfGranule(uint64_t granulePos) const {
+        if (granulePos > INT64_MAX / 1000000ll) {
+            return INT64_MAX;
+        }
         return granulePos * 1000000ll / mVi.rate;
     }
 
@@ -771,8 +774,13 @@ status_t MyOggExtractor::_readNextPacket(MediaBuffer **out, bool calcVorbisTimes
             return n < 0 ? n : (status_t)ERROR_END_OF_STREAM;
         }
 
-        mCurrentPageSamples =
-            mCurrentPage.mGranulePosition - mPrevGranulePosition;
+        // Prevent a harmless unsigned integer overflow by clamping to 0
+        if (mCurrentPage.mGranulePosition >= mPrevGranulePosition) {
+            mCurrentPageSamples =
+                    mCurrentPage.mGranulePosition - mPrevGranulePosition;
+        } else {
+            mCurrentPageSamples = 0;
+        }
         mFirstPacketInPage = true;
 
         mPrevGranulePosition = mCurrentPage.mGranulePosition;
@@ -916,6 +924,9 @@ int64_t MyOpusExtractor::getTimeUsOfGranule(uint64_t granulePos) const {
     uint64_t pcmSamplePosition = 0;
     if (granulePos > mCodecDelay) {
         pcmSamplePosition = granulePos - mCodecDelay;
+    }
+    if (pcmSamplePosition > INT64_MAX / 1000000ll) {
+        return INT64_MAX;
     }
     return pcmSamplePosition * 1000000ll / kOpusSampleRate;
 }
