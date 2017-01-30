@@ -1402,7 +1402,6 @@ status_t AudioTrack::createTrack_l()
     }
 
     audio_output_flags_t flags = mFlags;
-    audio_output_flags_t trackFlags = mFlags;
 
     pid_t tid = -1;
     if (mFlags & AUDIO_OUTPUT_FLAG_FAST) {
@@ -1412,7 +1411,7 @@ status_t AudioTrack::createTrack_l()
     }
 
     if (mTrackOffloaded) {
-        trackFlags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_DIRECT);
+        flags = (audio_output_flags_t)(flags | AUDIO_OUTPUT_FLAG_DIRECT);
     }
     size_t temp = frameCount;   // temp may be replaced by a revised value of frameCount,
                                 // but we will still need the original value also
@@ -1422,7 +1421,7 @@ status_t AudioTrack::createTrack_l()
                                                       mFormat,
                                                       mChannelMask,
                                                       &temp,
-                                                      &trackFlags,
+                                                      &flags,
                                                       mSharedBuffer,
                                                       output,
                                                       mClientPid,
@@ -1438,6 +1437,10 @@ status_t AudioTrack::createTrack_l()
         goto release;
     }
     ALOG_ASSERT(track != 0);
+
+    if (mTrackOffloaded) {
+        flags = (audio_output_flags_t)(flags & ~AUDIO_OUTPUT_FLAG_DIRECT);
+    }
 
     // AudioFlinger now owns the reference to the I/O handle,
     // so we are no longer responsible for releasing it.
